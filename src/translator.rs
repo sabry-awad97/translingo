@@ -56,7 +56,7 @@ impl Translator {
         let text = res
             .text()
             .await
-            .map_err(|err| TranslateError::Other(err.to_string()))?;
+            .map_err(|err| TranslateError::TextDecodeError(err.to_string()))?;
 
         let raw = serde_json::from_str::<Value>(&text).map_err(TranslateError::SerdeError)?;
         if let Some(error) = raw.get("error") {

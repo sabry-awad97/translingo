@@ -7,6 +7,7 @@ use crate::{
     error::TranslateError,
     model::TranslationResponse,
     translator::Translator,
+    utils::validate_input_text,
 };
 
 pub struct TranslationCache {
@@ -23,6 +24,7 @@ impl TranslationCache {
     }
 
     pub async fn translate(&mut self) -> Result<TranslationResponse, TranslateError> {
+        validate_input_text(&self.translator.input_text)?;
         // check if the result is already in the cache
         if let Some(result) = self.cache.get(&self.translator.input_text) {
             return Ok(result.clone());
