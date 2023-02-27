@@ -1,6 +1,8 @@
+use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::net::IpAddr;
 use thiserror::Error;
 
 const DEFAULT_FROM: &str = "auto";
@@ -31,7 +33,13 @@ pub struct Sentence {
 #[derive(Debug, Error)]
 pub enum TranslateError {
     #[error("HTTP error: {status} - {message}")]
-    HttpError { status: u16, message: String },
+    HttpError {
+        status: u16,
+        message: String,
+        ip_address: String,
+        time: String,
+        url: String,
+    },
     #[error("Google Translate API error: {0}")]
     ApiError(String),
     #[error("Reqwest error: {0}")]
@@ -79,6 +87,8 @@ impl Translator {
             "sl={}&tl={}&q={}",
             self.options.from, self.options.to, self.input_text
         );
+
+        let ip_address = IpAddr::from([208, 126, 87, 161]);
         let res = self
             .client
             .post(&format!(
@@ -89,20 +99,32 @@ impl Translator {
                 "Content-Type",
                 "application/x-www-form-urlencoded;charset=utf-8",
             )
+            .header("X-Forwarded-For", ip_address.to_string())
             .body(body)
             .send()
             .await
             .map_err(TranslateError::ReqwestError)?;
+
         if !res.status().is_success() {
+            let status = res.status().as_u16();
+            let message = res.status().canonical_reason().unwrap_or("").to_string();
+            let text = res.text().await.unwrap();
+            let (ip_address, time, url) = extract_too_many_requests_info(&text);
             return Err(TranslateError::HttpError {
-                status: res.status().as_u16(),
-                message: res.status().canonical_reason().unwrap_or("").to_string(),
+                status,
+                message,
+                ip_address,
+                time,
+                url,
             });
         }
+
         let text = res
             .text()
             .await
             .map_err(|err| TranslateError::Other(err.to_string()))?;
+
+        println!("{}", text);
         let raw = serde_json::from_str::<Value>(&text).map_err(TranslateError::SerdeError)?;
 
         if let Some(error) = raw.get("error") {
@@ -129,4 +151,24 @@ async fn main() {
     let translator = Translator::new("Hello world".to_string(), Some(TranslateOptions::default()));
     let response = translator.translate().await;
     println!("Response: {:?}", response);
+}
+
+pub fn extract_too_many_requests_info(html: &str) -> (String, String, String) {
+    let ip_regex = Regex::new(r"IP address: (.+?)<br>").unwrap();
+    let ip = ip_regex
+        .captures(html)
+        .map_or(String::new(), |cap| cap[1].to_string());
+
+    let time_regex = Regex::new(r"Time: (.+?)<br>").unwrap();
+    let time = time_regex
+        .captures(html)
+        .map_or(String::new(), |cap| cap[1].to_string());
+
+    let url_regex = Regex::new(r"URL: (.+?)<br>").unwrap();
+    let url = url_regex
+        .captures(html)
+        .map_or(String::new(), |cap| cap[1].to_string())
+        .replace("&amp;", "&");
+
+    (ip, time, url)
 }
