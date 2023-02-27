@@ -4,6 +4,7 @@ pub mod model;
 pub mod translation_cache;
 pub mod translator;
 pub mod utils;
+pub mod language;
 
 use std::error::Error;
 use std::io::BufRead;
