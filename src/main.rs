@@ -1,34 +1,12 @@
 use regex::Regex;
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::net::IpAddr;
 use thiserror::Error;
+use url::Url;
 
 const DEFAULT_FROM: &str = "auto";
-const DEFAULT_TO: &str = "fr";
-const DEFAULT_HOST: &str = "translate.google.com";
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TranslationResponse {
-    pub sentences: Vec<Sentence>,
-    pub src: String,
-    pub confidence: f32,
-    pub ld_result: LDResult,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LDResult {
-    pub srclangs: Vec<String>,
-    pub srclangs_confidences: Vec<f32>,
-    pub extended_srclangs: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Sentence {
-    pub trans: String,
-    pub orig: String,
-}
+const DEFAULT_TO: &str = "ar";
+const DEFAULT_HOST: &str = "https://translate.googleapis.com";
 
 #[derive(Debug, Error)]
 pub enum TranslateError {
@@ -45,23 +23,40 @@ pub enum TranslateError {
     #[error("Reqwest error: {0}")]
     ReqwestError(reqwest::Error),
     #[error("Serde error: {0}")]
-    SerdeError(serde_json::Error),
+    SerdeError(#[from] serde_json::Error),
+    #[error("Failed to build URL: {0}")]
+    UrlBuildError(#[from] url::ParseError),
     #[error("Other error: {0}")]
     Other(String),
 }
 
 #[derive(Debug, Clone)]
 pub struct TranslateOptions {
-    from: String,
-    to: String,
+    source_lang: String,
+    target_lang: String,
     host: String,
+}
+
+impl TranslateOptions {
+    fn to_query_params(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("client", String::from("gtx")),
+            ("sl", String::from(&self.source_lang)),
+            ("tl", String::from(&self.target_lang)),
+            ("dt", String::from("t")),
+            ("dt", String::from("rm")),
+            ("dj", String::from("1")),
+            ("ie", String::from("UTF-8")),
+            ("oe", String::from("UTF-8")),
+        ]
+    }
 }
 
 impl Default for TranslateOptions {
     fn default() -> Self {
         Self {
-            from: DEFAULT_FROM.to_string(),
-            to: DEFAULT_TO.to_string(),
+            source_lang: DEFAULT_FROM.to_string(),
+            target_lang: DEFAULT_TO.to_string(),
             host: DEFAULT_HOST.to_string(),
         }
     }
@@ -82,29 +77,22 @@ impl Translator {
         }
     }
 
-    pub async fn translate(&self) -> Result<String, TranslateError> {
-        let body = format!(
-            "sl={}&tl={}&q={}",
-            self.options.from, self.options.to, self.input_text
-        );
+    pub async fn translate(&self) -> Result<Value, TranslateError> {
+        let body = format!("q={}", self.input_text);
 
-        let ip_address = IpAddr::from([208, 126, 87, 161]);
+        let api_endpoint = format!("{}/translate_a/single", self.options.host);
+        let url = Url::parse_with_params(&api_endpoint, self.options.to_query_params())?;
         let res = self
             .client
-            .post(&format!(
-                "https://{}/translate_a/single?client=at&dt=t&dt=rm&dj=1",
-                self.options.host
-            ))
+            .post(url)
             .header(
                 "Content-Type",
                 "application/x-www-form-urlencoded;charset=utf-8",
             )
-            .header("X-Forwarded-For", ip_address.to_string())
             .body(body)
             .send()
             .await
             .map_err(TranslateError::ReqwestError)?;
-
         if !res.status().is_success() {
             let status = res.status().as_u16();
             let message = res.status().canonical_reason().unwrap_or("").to_string();
@@ -118,15 +106,11 @@ impl Translator {
                 url,
             });
         }
-
         let text = res
             .text()
             .await
             .map_err(|err| TranslateError::Other(err.to_string()))?;
-
-        println!("{}", text);
         let raw = serde_json::from_str::<Value>(&text).map_err(TranslateError::SerdeError)?;
-
         if let Some(error) = raw.get("error") {
             return Err(TranslateError::ApiError(
                 error
@@ -134,15 +118,7 @@ impl Translator {
                     .map_or_else(|| "".to_string(), |v| v.to_string()),
             ));
         }
-        let sentences = serde_json::from_value::<TranslationResponse>(raw)
-            .map_err(TranslateError::SerdeError)?;
-        let text = sentences
-            .sentences
-            .into_iter()
-            .filter_map(|s| Some(s.trans))
-            .collect::<Vec<String>>()
-            .join("");
-        Ok(text)
+        Ok(raw)
     }
 }
 
