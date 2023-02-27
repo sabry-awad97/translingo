@@ -1,3 +1,11 @@
+use std::{
+    fs::File,
+    io::{self, BufRead, BufReader},
+    path::PathBuf,
+};
+
+use structopt::StructOpt;
+
 const DEFAULT_FROM: &str = "auto";
 const DEFAULT_TO: &str = "ar";
 const DEFAULT_HOST: &str = "https://translate.googleapis.com";
@@ -32,5 +40,42 @@ impl TranslateOptions {
             target_lang: target_language.unwrap_or(DEFAULT_TO.to_string()),
             host: DEFAULT_HOST.to_string(),
         }
+    }
+}
+
+#[derive(StructOpt, Debug)]
+#[structopt(name = "translator", about = "A command line translator tool")]
+pub struct TranslationConfig {
+    #[structopt(parse(from_os_str), help = "The input file path, or - for stdin")]
+    pub input_source: Option<PathBuf>,
+
+    #[structopt(short = "f", long = "from", help = "The source language code")]
+    pub from: Option<String>,
+
+    #[structopt(short = "t", long = "to", help = "The target language code")]
+    pub to: Option<String>,
+}
+
+impl TranslationConfig {
+    pub fn get_input_source(&self) -> io::Result<Box<dyn BufRead>> {
+        match self.input_source.as_deref() {
+            Some(file) => {
+                let file = File::open(file)?;
+                let reader = BufReader::new(file);
+                Ok(Box::new(reader))
+            }
+
+            None => {
+                let stdin = io::stdin();
+                let reader = BufReader::new(stdin);
+                Ok(Box::new(reader))
+            }
+        }
+    }
+}
+
+impl TranslationConfig {
+    pub fn from_args() -> Self {
+        Self::from_args_safe().unwrap_or_else(|e| e.exit())
     }
 }
