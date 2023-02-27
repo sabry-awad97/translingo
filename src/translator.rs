@@ -7,12 +7,12 @@ use url::Url;
 
 use crate::{
     config::TranslateOptions, error::TranslateError, model::TranslationResponse,
-    utils::extract_too_many_requests_info,
+    translation_cache::TranslationCache, utils::extract_too_many_requests_info,
 };
 
 pub struct Translator {
     client: Client,
-    input_text: String,
+    pub input_text: String,
     options: TranslateOptions,
 }
 
@@ -96,7 +96,7 @@ pub async fn translate(
     input_text: &str,
     options: TranslateOptions,
 ) -> Result<TranslationResponse, TranslateError> {
-    let translator = Translator::new(input_text.to_owned(), options);
+    let mut translator = TranslationCache::new(input_text.to_owned(), options);
     let translation_result = match translator.translate().await {
         Ok(result) => result,
         Err(err) => return Err(TranslateError::ApiError(err.to_string())),

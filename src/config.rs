@@ -1,6 +1,7 @@
 const DEFAULT_FROM: &str = "auto";
 const DEFAULT_TO: &str = "ar";
 const DEFAULT_HOST: &str = "https://translate.googleapis.com";
+pub const CACHE_CAPACITY: usize = 1024;
 
 #[derive(Debug)]
 pub struct TranslateOptions {
