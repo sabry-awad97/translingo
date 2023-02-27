@@ -25,10 +25,10 @@ impl TranslateOptions {
 }
 
 impl TranslateOptions {
-    pub fn new(source_language: Option<&str>, target_language: Option<&str>) -> Self {
+    pub fn new(source_language: Option<String>, target_language: Option<String>) -> Self {
         Self {
-            source_lang: source_language.unwrap_or(DEFAULT_FROM).to_string(),
-            target_lang: target_language.unwrap_or(DEFAULT_TO).to_string(),
+            source_lang: source_language.unwrap_or(DEFAULT_FROM.to_string()),
+            target_lang: target_language.unwrap_or(DEFAULT_TO.to_string()),
             host: DEFAULT_HOST.to_string(),
         }
     }
